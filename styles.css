@@ -3,7 +3,10 @@ html {
 }
 
 body {
-    height: calc(var(--app-height, 1vh) * 100);
+    height: 100%;
+    min-height: 100vh;
+    min-height: 100svh;
+    min-height: 100dvh;
     margin: 0;
     padding: 0;
     display: flex;
@@ -12,7 +15,8 @@ body {
 }
 
 #map {
-    flex: 0 0 calc(var(--app-height, 1vh) * 60);
+    flex: 0 0 60%;
+    min-height: 0;
     width: 100vw;
     transition: flex-basis 0.25s ease;
 }
@@ -23,10 +27,10 @@ body {
     background: rgba(255, 255, 255, 0.97);
     border-top: 1px solid rgba(0, 0, 0, 0.15);
     box-shadow: 0 -3px 12px rgba(0, 0, 0, 0.15);
-    flex: 0 0 calc(var(--app-height, 1vh) * 40);
+    flex: 0 0 40%;
     display: flex;
     flex-direction: column;
-    min-height: 0;
+    min-height: 46px;
     transition: flex-basis 0.25s ease;
 }
 
@@ -61,11 +65,11 @@ body {
 }
 
 body.panel-collapsed #map {
-    flex-basis: calc((var(--app-height, 1vh) * 100) - 46px);
+    flex-basis: calc(100% - 46px - env(safe-area-inset-bottom, 0px));
 }
 
 body.panel-collapsed .recorridos-panel {
-    flex-basis: 46px;
+    flex-basis: calc(46px + env(safe-area-inset-bottom, 0px));
 }
 
 body.panel-collapsed .recorridos-list {
@@ -102,16 +106,32 @@ body.panel-collapsed .recorridos-list {
     color: #6b7280;
 }
 
-.leaflet-control-tracking a {
+.leaflet-control-tracking a,
+.leaflet-control-home a {
     width: 34px;
     height: 34px;
     line-height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     text-align: center;
     font-size: 18px;
     font-weight: 700;
     color: #2c3e50;
     background: #fff;
     text-decoration: none;
+}
+
+.leaflet-control-icon {
+    width: 18px;
+    height: 18px;
+    object-fit: contain;
+    display: block;
+}
+
+.leaflet-control-location-icon {
+    width: 20px;
+    height: 20px;
 }
 
 .leaflet-control-tracking a.is-active {

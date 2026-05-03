@@ -3,6 +3,11 @@ const map = L.map('map', {
     maxZoom: 22,
     zoomSnap: 0.5
 }).setView([-12.04637, -77.04279], 13);
+const defaultHomeView = {
+    center: [-12.04637, -77.04279],
+    zoom: 13
+};
+let homeBounds = null;
 
 const recorridosListElement = document.getElementById('recorridosList');
 const recorridosPanelElement = document.getElementById('recorridosPanel');
@@ -18,14 +23,6 @@ const baseFilter = 'ESTADO = 2 AND ACTIVO = 1';
 const urlParams = new URLSearchParams(window.location.search);
 const ubigeoParam = urlParams.get('ubigeo');
 const idSolicitudParam = urlParams.get('id_solicitud');
-
-function updateViewportHeight() {
-    document.documentElement.style.setProperty('--app-height', `${window.innerHeight * 0.01}px`);
-}
-
-updateViewportHeight();
-window.addEventListener('resize', updateViewportHeight);
-window.addEventListener('orientationchange', updateViewportHeight);
 
 function sanitizeSqlValue(value, isNumeric = false) {
     if (value === null || value === undefined || value === '') {
@@ -232,7 +229,8 @@ const limitesLayer = L.esri.featureLayer({
 if (ubigeoParam) {
     limitesLayer.query().where(limitesFilter).bounds((error, bounds) => {
         if (!error && bounds && bounds.isValid()) {
-            map.fitBounds(bounds.pad(0.15));
+            homeBounds = bounds.pad(0.15);
+            map.fitBounds(homeBounds);
         }
     });
 }
@@ -320,12 +318,44 @@ let marker;
 let circle;
 let watchId;
 let isTracking = false;
+let homeControlButton;
 let trackingControlButton;
+const homeIconUrl = 'https://cdn-icons-png.flaticon.com/512/25/25694.png';
+const trackingIconUrl = 'https://www.svgrepo.com/show/502779/my-location.svg';
 const liveLocationIcon = L.divIcon({
     className: 'live-location-icon',
     iconSize: [28, 28],
     iconAnchor: [14, 14],
     html: '<span class="live-location-core"></span><span class="live-location-pulse"></span>'
+});
+
+const HomeControl = L.Control.extend({
+    options: {
+        position: 'bottomright'
+    },
+    onAdd: function onAddHomeControl() {
+        const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-control-home');
+        homeControlButton = L.DomUtil.create('a', '', container);
+        homeControlButton.href = '#';
+        homeControlButton.title = 'Volver a vista inicial';
+        homeControlButton.setAttribute('role', 'button');
+        homeControlButton.setAttribute('aria-label', 'Volver a vista inicial');
+        homeControlButton.innerHTML = `<img src="${homeIconUrl}" alt="" class="leaflet-control-icon" />`;
+
+        L.DomEvent.disableClickPropagation(container);
+        L.DomEvent.on(homeControlButton, 'click', (event) => {
+            L.DomEvent.preventDefault(event);
+
+            if (homeBounds && homeBounds.isValid()) {
+                map.fitBounds(homeBounds);
+                return;
+            }
+
+            map.setView(defaultHomeView.center, defaultHomeView.zoom);
+        });
+
+        return container;
+    }
 });
 
 const TrackingControl = L.Control.extend({
@@ -356,6 +386,7 @@ const TrackingControl = L.Control.extend({
 });
 
 map.addControl(new TrackingControl());
+map.addControl(new HomeControl());
 
 function updateTrackingControlUI() {
     if (!trackingControlButton) {
@@ -363,7 +394,7 @@ function updateTrackingControlUI() {
     }
 
     trackingControlButton.classList.toggle('is-active', isTracking);
-    trackingControlButton.innerHTML = isTracking ? '&#9632;' : '&#8982;';
+    trackingControlButton.innerHTML = `<img src="${trackingIconUrl}" alt="" class="leaflet-control-icon leaflet-control-location-icon" />`;
     trackingControlButton.title = isTracking ? 'Detener seguimiento' : 'Iniciar seguimiento';
     trackingControlButton.setAttribute('aria-label', trackingControlButton.title);
 }
