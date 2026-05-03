@@ -1,5 +1,9 @@
+html {
+    height: 100%;
+}
+
 body {
-    height: 100vh;
+    height: calc(var(--app-height, 1vh) * 100);
     margin: 0;
     padding: 0;
     display: flex;
@@ -8,7 +12,7 @@ body {
 }
 
 #map {
-    flex: 0 0 60vh;
+    flex: 0 0 calc(var(--app-height, 1vh) * 60);
     width: 100vw;
     transition: flex-basis 0.25s ease;
 }
@@ -19,7 +23,7 @@ body {
     background: rgba(255, 255, 255, 0.97);
     border-top: 1px solid rgba(0, 0, 0, 0.15);
     box-shadow: 0 -3px 12px rgba(0, 0, 0, 0.15);
-    flex: 0 0 40vh;
+    flex: 0 0 calc(var(--app-height, 1vh) * 40);
     display: flex;
     flex-direction: column;
     min-height: 0;
@@ -57,7 +61,7 @@ body {
 }
 
 body.panel-collapsed #map {
-    flex-basis: calc(100vh - 46px);
+    flex-basis: calc((var(--app-height, 1vh) * 100) - 46px);
 }
 
 body.panel-collapsed .recorridos-panel {

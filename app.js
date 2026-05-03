@@ -19,6 +19,14 @@ const urlParams = new URLSearchParams(window.location.search);
 const ubigeoParam = urlParams.get('ubigeo');
 const idSolicitudParam = urlParams.get('id_solicitud');
 
+function updateViewportHeight() {
+    document.documentElement.style.setProperty('--app-height', `${window.innerHeight * 0.01}px`);
+}
+
+updateViewportHeight();
+window.addEventListener('resize', updateViewportHeight);
+window.addEventListener('orientationchange', updateViewportHeight);
+
 function sanitizeSqlValue(value, isNumeric = false) {
     if (value === null || value === undefined || value === '') {
         return null;
