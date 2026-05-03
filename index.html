@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Leaflet Mobile Tracking</title>
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        body { margin: 0; padding: 0; }
+        #map { height: 100vh; width: 100vw; }
+
+        .btn-tracking {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            padding: 12px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-family: Arial, sans-serif;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        }
+
+        .btn-active {
+            background-color: #dc3545;
+        }
+    </style>
+</head>
+<body>
+
+    <button id="trackBtn" class="btn-tracking">Iniciar Seguimiento</button>
+    <div id="map"></div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        // 1. Inicialización del mapa
+        const map = L.map('map').setView([-12.04637, -77.04279], 13); // Vista inicial (Lima)
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        let marker, circle, watchId;
+        let isTracking = false;
+        const trackBtn = document.getElementById('trackBtn');
+
+        // 2. Función de éxito al obtener posición
+        function onLocationSuccess(position) {
+            const { latitude, longitude, accuracy } = position.coords;
+            const latlng = [latitude, longitude];
+
+            if (!marker) {
+                // Crear marcador y círculo de precisión la primera vez
+                marker = L.marker(latlng).addTo(map);
+                circle = L.circle(latlng, { radius: accuracy }).addTo(map);
+                map.setView(latlng, 16); // Hacer zoom a la ubicación
+            } else {
+                // Actualizar posiciones existentes
+                marker.setLatLng(latlng);
+                circle.setLatLng(latlng);
+                circle.setRadius(accuracy);
+            }
+            
+            // Centrar mapa suavemente
+            map.panTo(latlng);
+        }
+
+        function onLocationError(error) {
+            alert("Error al obtener ubicación: " + error.message);
+            stopTracking();
+        }
+
+        // 3. Control del rastreo
+        function startTracking() {
+            if ("geolocation" in navigator) {
+                isTracking = true;
+                trackBtn.innerText = "Detener Seguimiento";
+                trackBtn.classList.add('btn-active');
+                
+                // watchPosition permite seguimiento en tiempo real
+                watchId = navigator.geolocation.watchPosition(onLocationSuccess, onLocationError, {
+                    enableHighAccuracy: true, // Usa GPS si está disponible
+                    timeout: 5000,
+                    maximumAge: 0
+                });
+            } else {
+                alert("Tu navegador no soporta geolocalización");
+            }
+        }
+
+        function stopTracking() {
+            isTracking = false;
+            trackBtn.innerText = "Iniciar Seguimiento";
+            trackBtn.classList.remove('btn-active');
+            if (watchId) {
+                navigator.geolocation.clearWatch(watchId);
+            }
+        }
+
+        // Evento del botón
+        trackBtn.addEventListener('click', () => {
+            if (!isTracking) {
+                startTracking();
+            } else {
+                stopTracking();
+            }
+        });
+
+    </script>
+</body>
+</html>
