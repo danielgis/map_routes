@@ -1,0 +1,414 @@
+// Inicializacion del mapa
+const map = L.map('map', {
+    maxZoom: 22,
+    zoomSnap: 0.5
+}).setView([-12.04637, -77.04279], 13);
+
+const recorridosListElement = document.getElementById('recorridosList');
+const recorridosPanelElement = document.getElementById('recorridosPanel');
+const toggleRecorridosPanelButton = document.getElementById('toggleRecorridosPanel');
+
+const baseLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors',
+    maxNativeZoom: 19,
+    maxZoom: 22
+}).addTo(map);
+
+const baseFilter = 'ESTADO = 2 AND ACTIVO = 1';
+const urlParams = new URLSearchParams(window.location.search);
+const ubigeoParam = urlParams.get('ubigeo');
+const idSolicitudParam = urlParams.get('id_solicitud');
+
+function sanitizeSqlValue(value, isNumeric = false) {
+    if (value === null || value === undefined || value === '') {
+        return null;
+    }
+
+    if (isNumeric) {
+        return /^-?\d+(\.\d+)?$/.test(value) ? value : null;
+    }
+
+    return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+function buildWhere(extraClauses = []) {
+    return [baseFilter, ...extraClauses.filter(Boolean)].join(' AND ');
+}
+
+const ubigeoClause = ubigeoParam ? `UBIGEO = ${sanitizeSqlValue(ubigeoParam)}` : '';
+const idSolicitudValue = sanitizeSqlValue(idSolicitudParam, true);
+const idSolicitudClause = idSolicitudValue ? `ID_SOLICITUD = ${idSolicitudValue}` : '';
+const limitesFilter = ubigeoClause || '1=1';
+
+function setRecorridosPanelCollapsed(collapsed) {
+    document.body.classList.toggle('panel-collapsed', collapsed);
+
+    if (toggleRecorridosPanelButton) {
+        toggleRecorridosPanelButton.textContent = collapsed ? 'Expandir' : 'Minimizar';
+        toggleRecorridosPanelButton.setAttribute('aria-expanded', String(!collapsed));
+    }
+
+    window.setTimeout(() => map.invalidateSize(), 280);
+}
+
+if (recorridosPanelElement && toggleRecorridosPanelButton) {
+    toggleRecorridosPanelButton.addEventListener('click', () => {
+        const collapsed = !document.body.classList.contains('panel-collapsed');
+        setRecorridosPanelCollapsed(collapsed);
+    });
+}
+
+const layer0Filter = buildWhere([ubigeoClause]);
+const layer1Filter = buildWhere([ubigeoClause]);
+const layer2Filter = buildWhere([ubigeoClause, idSolicitudClause]);
+
+const arancelStyle = {
+    color: '#ff8c00',
+    weight: 4,
+    fillColor: '#ff8c00',
+    fillOpacity: 0.25
+};
+
+// Capas ESRI en el orden solicitado: 0, 1, 2
+const esriLayer0 = L.esri.featureLayer({
+    url: 'https://ws.mineco.gob.pe/serverdf/rest/services/pruebas/inspeccion_ocular/MapServer/0',
+    where: layer0Filter,
+    onEachFeature: (feature, layer) => {
+        bindFeatureLabel(layer, feature, ['nombre'], {
+            direction: 'top',
+            offset: [0, -8]
+        });
+    }
+}).addTo(map);
+
+const esriLayer1 = L.esri.featureLayer({
+    url: 'https://ws.mineco.gob.pe/serverdf/rest/services/pruebas/inspeccion_ocular/MapServer/1',
+    where: layer1Filter,
+    style: () => arancelStyle,
+    onEachFeature: (feature, layer) => {
+        bindLineLabel(layer, feature, ['val_act', 'VAL_ACT'], {
+            fill: '#ff8c00'
+        });
+    },
+    pointToLayer: (_, latlng) => L.circleMarker(latlng, {
+        radius: 6,
+        color: '#ff8c00',
+        fillColor: '#ff8c00',
+        fillOpacity: 0.9,
+        weight: 1.5
+    })
+}).addTo(map);
+
+const esriLayer2 = L.esri.featureLayer({
+    url: 'https://ws.mineco.gob.pe/serverdf/rest/services/pruebas/inspeccion_ocular/MapServer/2',
+    where: layer2Filter,
+    onEachFeature: (feature, layer) => {
+        bindLineLabel(layer, feature, ['nombre', 'NOMBRE'], {
+            fill: '#2f6db3'
+        });
+    },
+    style: () => ({
+        color: '#2f6db3',
+        weight: 4
+    })
+}).addTo(map);
+
+function getGeometryBounds(feature) {
+    if (!feature || !feature.geometry) {
+        return null;
+    }
+
+    const geometryLayer = L.geoJSON(feature);
+    const bounds = geometryLayer.getBounds();
+    return bounds && bounds.isValid() ? bounds : null;
+}
+
+function setRecorridosEmptyState(message) {
+    if (!recorridosListElement) {
+        return;
+    }
+
+    recorridosListElement.innerHTML = `<div class="recorridos-empty">${message}</div>`;
+}
+
+function getFeatureProperties(feature) {
+    return feature?.properties || feature?.attributes || null;
+}
+
+function renderRecorridosList(features) {
+    if (!recorridosListElement) {
+        return;
+    }
+
+    if (!features || features.length === 0) {
+        setRecorridosEmptyState('No hay recorridos para los filtros actuales.');
+        return;
+    }
+
+    const sortedFeatures = [...features].sort((a, b) => {
+        const aValue = Number(getFieldValue(getFeatureProperties(a), ['id_recorrido', 'ID_RECORRIDO']) || 0);
+        const bValue = Number(getFieldValue(getFeatureProperties(b), ['id_recorrido', 'ID_RECORRIDO']) || 0);
+        return aValue - bValue;
+    });
+
+    const html = sortedFeatures
+        .map((feature, index) => {
+            const nombre = getFieldValue(getFeatureProperties(feature), ['nombre', 'NOMBRE']) || 'Sin nombre';
+            const bounds = getGeometryBounds(feature);
+
+            if (!bounds) {
+                return '';
+            }
+
+            const southWest = bounds.getSouthWest();
+            const northEast = bounds.getNorthEast();
+            const boundsPayload = [southWest.lat, southWest.lng, northEast.lat, northEast.lng].join(',');
+
+            return `<button type="button" class="recorrido-item" data-bounds="${boundsPayload}">Recorrido ${index + 1}: ${String(nombre)}</button>`;
+        })
+        .join('');
+
+    recorridosListElement.innerHTML = html || '<div class="recorridos-empty">No hay recorridos para los filtros actuales.</div>';
+
+    recorridosListElement.querySelectorAll('.recorrido-item').forEach((item) => {
+        item.addEventListener('click', () => {
+            const rawBounds = item.getAttribute('data-bounds');
+            if (!rawBounds) {
+                return;
+            }
+
+            const [south, west, north, east] = rawBounds.split(',').map(Number);
+            const bounds = L.latLngBounds([south, west], [north, east]);
+            if (bounds.isValid()) {
+                map.fitBounds(bounds.pad(0.2), { maxZoom: 19 });
+            }
+
+            recorridosListElement.querySelectorAll('.recorrido-item').forEach((row) => row.classList.remove('is-selected'));
+            item.classList.add('is-selected');
+        });
+    });
+}
+
+function loadRecorridosList() {
+    if (!recorridosListElement) {
+        return;
+    }
+
+    setRecorridosEmptyState('Cargando recorridos...');
+
+    esriLayer2
+        .query()
+        .where(layer2Filter)
+        .run((error, featureCollection) => {
+            if (error) {
+                setRecorridosEmptyState('No se pudo cargar la lista de recorridos.');
+                return;
+            }
+
+            const features = featureCollection?.features || [];
+            renderRecorridosList(features);
+        });
+}
+
+const limitesLayer = L.esri.featureLayer({
+    url: 'https://ws.mineco.gob.pe/serverdf/rest/services/pruebas/limites_nacional/MapServer/2',
+    where: limitesFilter,
+    style: () => ({
+        color: '#37474f',
+        weight: 2,
+        fillColor: '#90a4ae',
+        fillOpacity: 0.08
+    })
+}).addTo(map);
+
+if (ubigeoParam) {
+    limitesLayer.query().where(limitesFilter).bounds((error, bounds) => {
+        if (!error && bounds && bounds.isValid()) {
+            map.fitBounds(bounds.pad(0.15));
+        }
+    });
+}
+
+loadRecorridosList();
+
+function getFieldValue(properties, candidateFields) {
+    if (!properties) {
+        return null;
+    }
+
+    for (const field of candidateFields) {
+        if (properties[field] !== undefined && properties[field] !== null) {
+            return properties[field];
+        }
+
+        const matchedKey = Object.keys(properties).find((key) => key.toLowerCase() === field.toLowerCase());
+        if (matchedKey && properties[matchedKey] !== undefined && properties[matchedKey] !== null) {
+            return properties[matchedKey];
+        }
+    }
+
+    return null;
+}
+
+function bindFeatureLabel(layer, feature, candidateFields, tooltipOptions) {
+    const properties = feature?.properties || layer?.feature?.properties;
+    const value = getFieldValue(properties, candidateFields);
+
+    if (value === null || value === '') {
+        return;
+    }
+
+    layer.bindTooltip(String(value), {
+        permanent: true,
+        className: 'map-label',
+        ...tooltipOptions
+    });
+}
+
+function bindLineLabel(layer, feature, candidateFields, textStyle = {}) {
+    const properties = feature?.properties || layer?.feature?.properties;
+    const value = getFieldValue(properties, candidateFields);
+
+    if (value === null || value === '') {
+        return;
+    }
+
+    if (layer instanceof L.Polyline && typeof layer.setText === 'function') {
+        layer.setText(String(value), {
+            center: true,
+            repeat: false,
+            orientation: 0,
+            offset: 0,
+            attributes: {
+                'font-size': '16px',
+                'font-weight': '700',
+                stroke: '#ffffff',
+                'stroke-width': 3,
+                'paint-order': 'stroke',
+                ...textStyle
+            }
+        });
+        return;
+    }
+
+    bindFeatureLabel(layer, feature, candidateFields, {
+        direction: 'center'
+    });
+}
+
+L.control.layers(
+    {
+        'OpenStreetMap': baseLayer
+    },
+    {
+        'Puntos de inicio y fin': esriLayer0,
+        'Aranceles': esriLayer1,
+        'Recorrido': esriLayer2,
+        'Limites Nacional': limitesLayer
+    }
+).addTo(map);
+
+let marker;
+let circle;
+let watchId;
+let isTracking = false;
+let trackingControlButton;
+const liveLocationIcon = L.divIcon({
+    className: 'live-location-icon',
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+    html: '<span class="live-location-core"></span><span class="live-location-pulse"></span>'
+});
+
+const TrackingControl = L.Control.extend({
+    options: {
+        position: 'bottomright'
+    },
+    onAdd: function onAddControl() {
+        const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-control-tracking');
+        trackingControlButton = L.DomUtil.create('a', '', container);
+        trackingControlButton.href = '#';
+        trackingControlButton.title = 'Iniciar seguimiento';
+        trackingControlButton.setAttribute('role', 'button');
+        trackingControlButton.setAttribute('aria-label', 'Iniciar seguimiento');
+        updateTrackingControlUI();
+
+        L.DomEvent.disableClickPropagation(container);
+        L.DomEvent.on(trackingControlButton, 'click', (event) => {
+            L.DomEvent.preventDefault(event);
+            if (!isTracking) {
+                startTracking();
+            } else {
+                stopTracking();
+            }
+        });
+
+        return container;
+    }
+});
+
+map.addControl(new TrackingControl());
+
+function updateTrackingControlUI() {
+    if (!trackingControlButton) {
+        return;
+    }
+
+    trackingControlButton.classList.toggle('is-active', isTracking);
+    trackingControlButton.innerHTML = isTracking ? '&#9632;' : '&#8982;';
+    trackingControlButton.title = isTracking ? 'Detener seguimiento' : 'Iniciar seguimiento';
+    trackingControlButton.setAttribute('aria-label', trackingControlButton.title);
+}
+
+function onLocationSuccess(position) {
+    const { latitude, longitude, accuracy } = position.coords;
+    const latlng = [latitude, longitude];
+
+    if (!marker) {
+        marker = L.marker(latlng, { icon: liveLocationIcon }).addTo(map);
+        circle = L.circle(latlng, {
+            radius: accuracy,
+            color: '#00a3ff',
+            weight: 1.5,
+            fillColor: '#00a3ff',
+            fillOpacity: 0.12
+        }).addTo(map);
+        map.setView(latlng, 16);
+    } else {
+        marker.setLatLng(latlng);
+        circle.setLatLng(latlng);
+        circle.setRadius(accuracy);
+    }
+
+    map.panTo(latlng);
+}
+
+function onLocationError(error) {
+    alert('Error al obtener ubicacion: ' + error.message);
+    stopTracking();
+}
+
+function startTracking() {
+    if ('geolocation' in navigator) {
+        isTracking = true;
+        updateTrackingControlUI();
+
+        watchId = navigator.geolocation.watchPosition(onLocationSuccess, onLocationError, {
+            enableHighAccuracy: true,
+            timeout: 5000,
+            maximumAge: 0
+        });
+    } else {
+        alert('Tu navegador no soporta geolocalizacion');
+    }
+}
+
+function stopTracking() {
+    isTracking = false;
+    updateTrackingControlUI();
+
+    if (watchId) {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+    }
+}
