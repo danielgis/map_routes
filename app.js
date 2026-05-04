@@ -190,7 +190,7 @@ function renderRecorridosList(features) {
     recorridosListElement.innerHTML = html || '<div class="recorridos-empty">No hay recorridos para los filtros actuales.</div>';
 
     recorridosListElement.querySelectorAll('.recorrido-item').forEach((item) => {
-        item.addEventListener('click', () => {
+        const activateRecorridoItem = () => {
             const rawBounds = item.getAttribute('data-bounds');
             if (!rawBounds) {
                 return;
@@ -208,6 +208,21 @@ function renderRecorridosList(features) {
             }
 
             finishRecorridoSelectionLoading(item, requestToken);
+        };
+
+        item.addEventListener('touchend', (event) => {
+            event.preventDefault();
+            item.dataset.touchActivatedAt = String(Date.now());
+            activateRecorridoItem();
+        }, { passive: false });
+
+        item.addEventListener('click', () => {
+            const touchActivatedAt = Number(item.dataset.touchActivatedAt || 0);
+            if (touchActivatedAt && (Date.now() - touchActivatedAt) < 900) {
+                return;
+            }
+
+            activateRecorridoItem();
         });
     });
 }
