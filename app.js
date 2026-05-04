@@ -190,19 +190,37 @@ function renderRecorridosList(features) {
     recorridosListElement.innerHTML = html || '<div class="recorridos-empty">No hay recorridos para los filtros actuales.</div>';
 
     recorridosListElement.querySelectorAll('.recorrido-item').forEach((item) => {
+        const ensureSelectedState = () => {
+            recorridosListElement.querySelectorAll('.recorrido-item').forEach((row) => row.classList.remove('is-selected'));
+            item.classList.add('is-selected');
+        };
+
+        const ensureLoadingState = () => {
+            ensureSelectedState();
+
+            if (item.classList.contains('is-loading')) {
+                return Number(item.dataset.loadingToken || 0);
+            }
+
+            const requestToken = beginRecorridoSelectionLoading(item);
+            item.dataset.loadingToken = String(requestToken);
+            return requestToken;
+        };
+
         const activateRecorridoItem = () => {
+            delete item.dataset.pendingActivation;
+
             const rawBounds = item.getAttribute('data-bounds');
             if (!rawBounds) {
                 return;
             }
 
-            recorridosListElement.querySelectorAll('.recorrido-item').forEach((row) => row.classList.remove('is-selected'));
-            item.classList.add('is-selected');
-
-            const requestToken = beginRecorridoSelectionLoading(item);
+            const requestToken = ensureLoadingState();
             const bounds = parseBoundsPayload(rawBounds);
             if (bounds && bounds.isValid()) {
-                finishRecorridoSelectionLoadingOnMapMove(item, requestToken);
+                    if (!KEEP_RECORRIDO_LOADER_DURING_ZOOM) {
+                        finishRecorridoSelectionLoadingOnMapMove(item, requestToken);
+                    }
                 map.fitBounds(bounds.pad(0.2), { maxZoom: 19 });
                 return;
             }
@@ -210,11 +228,32 @@ function renderRecorridosList(features) {
             finishRecorridoSelectionLoading(item, requestToken);
         };
 
+        item.addEventListener('touchstart', () => {
+            item.dataset.pendingActivation = '1';
+            ensureLoadingState();
+        }, { passive: true });
+
+        item.addEventListener('mousedown', () => {
+            ensureLoadingState();
+        });
+
         item.addEventListener('touchend', (event) => {
             event.preventDefault();
             item.dataset.touchActivatedAt = String(Date.now());
             activateRecorridoItem();
         }, { passive: false });
+
+        item.addEventListener('touchcancel', () => {
+            if (item.dataset.pendingActivation !== '1') {
+                return;
+            }
+
+            const requestToken = Number(item.dataset.loadingToken || 0);
+            if (requestToken) {
+                finishRecorridoSelectionLoading(item, requestToken);
+            }
+            delete item.dataset.pendingActivation;
+        });
 
         item.addEventListener('click', () => {
             const touchActivatedAt = Number(item.dataset.touchActivatedAt || 0);
@@ -228,6 +267,7 @@ function renderRecorridosList(features) {
 }
 
 let activeRecorridoSelectionRequestToken = 0;
+const KEEP_RECORRIDO_LOADER_DURING_ZOOM = false;
 
 function parseBoundsPayload(rawBounds) {
     if (!rawBounds) {
@@ -260,6 +300,7 @@ function finishRecorridoSelectionLoading(item, requestToken) {
     if (item) {
         item.classList.remove('is-loading');
         item.removeAttribute('aria-busy');
+        delete item.dataset.loadingToken;
     }
 
     if (requestToken !== activeRecorridoSelectionRequestToken) {

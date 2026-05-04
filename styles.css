@@ -101,7 +101,7 @@ body.panel-collapsed .recorridos-list {
 }
 
 .recorridos-list.is-loading .recorrido-item {
-    pointer-events: none;
+    opacity: 0.98;
 }
 
 .recorrido-item.is-loading {
