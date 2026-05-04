@@ -79,9 +79,21 @@ const esriLayer0 = L.esri.featureLayer({
     url: 'https://ws.mineco.gob.pe/serverdf/rest/services/pruebas/inspeccion_ocular/MapServer/0',
     where: layer0Filter,
     onEachFeature: (feature, layer) => {
-        bindFeatureLabel(layer, feature, ['nombre'], {
+        const properties = feature?.properties || layer?.feature?.properties;
+        const nombre = getFieldValue(properties, ['nombre', 'NOMBRE']);
+        const tipoRecorrido = Number(getFieldValue(properties, ['tipo_recorrido', 'TIPO_RECORRIDO']));
+
+        if (nombre === null || nombre === '') {
+            return;
+        }
+
+        const prefix = tipoRecorrido === 1 ? 'ini: ' : (tipoRecorrido === 2 ? 'fin: ' : '');
+
+        layer.bindTooltip(`${prefix}${String(nombre)}`, {
             direction: 'top',
-            offset: [0, -8]
+            offset: [0, -8],
+            permanent: true,
+            className: 'map-label'
         });
     }
 }).addTo(map);
@@ -159,6 +171,7 @@ function renderRecorridosList(features) {
     const html = sortedFeatures
         .map((feature, index) => {
             const nombre = getFieldValue(getFeatureProperties(feature), ['nombre', 'NOMBRE']) || 'Sin nombre';
+            const idRecorrido = getFieldValue(getFeatureProperties(feature), ['id_recorrido', 'ID_RECORRIDO']);
             const bounds = getGeometryBounds(feature);
 
             if (!bounds) {
@@ -168,8 +181,9 @@ function renderRecorridosList(features) {
             const southWest = bounds.getSouthWest();
             const northEast = bounds.getNorthEast();
             const boundsPayload = [southWest.lat, southWest.lng, northEast.lat, northEast.lng].join(',');
+            const idRecorridoPayload = idRecorrido !== null && idRecorrido !== undefined ? String(idRecorrido) : '';
 
-            return `<button type="button" class="recorrido-item" data-bounds="${boundsPayload}">Recorrido ${index + 1}: ${String(nombre)}</button>`;
+            return `<button type="button" class="recorrido-item" data-bounds="${boundsPayload}" data-id-recorrido="${idRecorridoPayload}">Recorrido ${index + 1}: ${String(nombre)}</button>`;
         })
         .join('');
 
@@ -182,16 +196,25 @@ function renderRecorridosList(features) {
                 return;
             }
 
-            const [south, west, north, east] = rawBounds.split(',').map(Number);
-            const bounds = L.latLngBounds([south, west], [north, east]);
-            if (bounds.isValid()) {
-                map.fitBounds(bounds.pad(0.2), { maxZoom: 19 });
-            }
-
             recorridosListElement.querySelectorAll('.recorrido-item').forEach((row) => row.classList.remove('is-selected'));
             item.classList.add('is-selected');
+
+            const bounds = parseBoundsPayload(rawBounds);
+            if (bounds && bounds.isValid()) {
+                map.fitBounds(bounds.pad(0.2), { maxZoom: 19 });
+            }
         });
     });
+}
+
+function parseBoundsPayload(rawBounds) {
+    if (!rawBounds) {
+        return null;
+    }
+
+    const [south, west, north, east] = rawBounds.split(',').map(Number);
+    const bounds = L.latLngBounds([south, west], [north, east]);
+    return bounds.isValid() ? bounds : null;
 }
 
 function loadRecorridosList() {
@@ -394,7 +417,13 @@ function updateTrackingControlUI() {
     }
 
     trackingControlButton.classList.toggle('is-active', isTracking);
-    trackingControlButton.innerHTML = `<img src="${trackingIconUrl}" alt="" class="leaflet-control-icon leaflet-control-location-icon" />`;
+
+    if (isTracking) {
+        trackingControlButton.innerHTML = '<span class="leaflet-control-stop-icon" aria-hidden="true"></span>';
+    } else {
+        trackingControlButton.innerHTML = `<img src="${trackingIconUrl}" alt="" class="leaflet-control-icon leaflet-control-location-icon" />`;
+    }
+
     trackingControlButton.title = isTracking ? 'Detener seguimiento' : 'Iniciar seguimiento';
     trackingControlButton.setAttribute('aria-label', trackingControlButton.title);
 }
@@ -407,9 +436,9 @@ function onLocationSuccess(position) {
         marker = L.marker(latlng, { icon: liveLocationIcon }).addTo(map);
         circle = L.circle(latlng, {
             radius: accuracy,
-            color: '#00a3ff',
+            color: '#1b8f3a',
             weight: 1.5,
-            fillColor: '#00a3ff',
+            fillColor: '#2fbf56',
             fillOpacity: 0.12
         }).addTo(map);
         map.setView(latlng, 16);
