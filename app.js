@@ -208,8 +208,6 @@ function renderRecorridosList(features) {
         };
 
         const activateRecorridoItem = () => {
-            delete item.dataset.pendingActivation;
-
             const rawBounds = item.getAttribute('data-bounds');
             if (!rawBounds) {
                 return;
@@ -228,31 +226,47 @@ function renderRecorridosList(features) {
             finishRecorridoSelectionLoading(item, requestToken);
         };
 
-        item.addEventListener('touchstart', () => {
-            item.dataset.pendingActivation = '1';
-            ensureLoadingState();
+        item.addEventListener('touchstart', (event) => {
+            const touch = event.touches[0];
+            item.dataset.touchStartX = String(touch.clientX);
+            item.dataset.touchStartY = String(touch.clientY);
+            item.dataset.touchMoved = '0';
         }, { passive: true });
 
-        item.addEventListener('mousedown', () => {
-            ensureLoadingState();
-        });
+        item.addEventListener('touchmove', () => {
+            item.dataset.touchMoved = '1';
+        }, { passive: true });
 
         item.addEventListener('touchend', (event) => {
+            if (item.dataset.touchMoved === '1') {
+                delete item.dataset.touchStartX;
+                delete item.dataset.touchStartY;
+                delete item.dataset.touchMoved;
+                return;
+            }
+
             event.preventDefault();
+            delete item.dataset.touchStartX;
+            delete item.dataset.touchStartY;
+            delete item.dataset.touchMoved;
             item.dataset.touchActivatedAt = String(Date.now());
+            ensureLoadingState();
             activateRecorridoItem();
         }, { passive: false });
 
         item.addEventListener('touchcancel', () => {
-            if (item.dataset.pendingActivation !== '1') {
-                return;
-            }
+            delete item.dataset.touchStartX;
+            delete item.dataset.touchStartY;
+            delete item.dataset.touchMoved;
 
             const requestToken = Number(item.dataset.loadingToken || 0);
             if (requestToken) {
                 finishRecorridoSelectionLoading(item, requestToken);
             }
-            delete item.dataset.pendingActivation;
+        });
+
+        item.addEventListener('mousedown', () => {
+            ensureLoadingState();
         });
 
         item.addEventListener('click', () => {
