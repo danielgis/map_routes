@@ -199,13 +199,20 @@ function renderRecorridosList(features) {
             recorridosListElement.querySelectorAll('.recorrido-item').forEach((row) => row.classList.remove('is-selected'));
             item.classList.add('is-selected');
 
+            const requestToken = beginRecorridoSelectionLoading(item);
             const bounds = parseBoundsPayload(rawBounds);
             if (bounds && bounds.isValid()) {
+                finishRecorridoSelectionLoadingOnMapMove(item, requestToken);
                 map.fitBounds(bounds.pad(0.2), { maxZoom: 19 });
+                return;
             }
+
+            finishRecorridoSelectionLoading(item, requestToken);
         });
     });
 }
+
+let activeRecorridoSelectionRequestToken = 0;
 
 function parseBoundsPayload(rawBounds) {
     if (!rawBounds) {
@@ -215,6 +222,59 @@ function parseBoundsPayload(rawBounds) {
     const [south, west, north, east] = rawBounds.split(',').map(Number);
     const bounds = L.latLngBounds([south, west], [north, east]);
     return bounds.isValid() ? bounds : null;
+}
+
+function beginRecorridoSelectionLoading(item) {
+    activeRecorridoSelectionRequestToken += 1;
+    const requestToken = activeRecorridoSelectionRequestToken;
+
+    if (recorridosListElement) {
+        recorridosListElement.classList.add('is-loading');
+        recorridosListElement.setAttribute('aria-busy', 'true');
+    }
+
+    if (item) {
+        item.classList.add('is-loading');
+        item.setAttribute('aria-busy', 'true');
+    }
+
+    return requestToken;
+}
+
+function finishRecorridoSelectionLoading(item, requestToken) {
+    if (item) {
+        item.classList.remove('is-loading');
+        item.removeAttribute('aria-busy');
+    }
+
+    if (requestToken !== activeRecorridoSelectionRequestToken) {
+        return;
+    }
+
+    if (recorridosListElement) {
+        recorridosListElement.classList.remove('is-loading');
+        recorridosListElement.removeAttribute('aria-busy');
+    }
+}
+
+function finishRecorridoSelectionLoadingOnMapMove(item, requestToken) {
+    const completeLoading = () => {
+        map.off('moveend', onMoveEnd);
+        if (fallbackTimer) {
+            window.clearTimeout(fallbackTimer);
+        }
+        finishRecorridoSelectionLoading(item, requestToken);
+    };
+
+    const onMoveEnd = () => {
+        completeLoading();
+    };
+
+    let fallbackTimer = window.setTimeout(() => {
+        completeLoading();
+    }, 1500);
+
+    map.once('moveend', onMoveEnd);
 }
 
 function loadRecorridosList() {
