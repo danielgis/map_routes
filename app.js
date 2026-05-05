@@ -19,6 +19,12 @@ const baseLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.pn
     maxZoom: 22
 }).addTo(map);
 
+const satelliteBaseLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    attribution: 'Tiles © Esri',
+    maxNativeZoom: 19,
+    maxZoom: 22
+});
+
 const baseFilter = 'ESTADO = 2 AND ACTIVO = 1';
 const urlParams = new URLSearchParams(window.location.search);
 const ubigeoParam = urlParams.get('ubigeo');
@@ -457,7 +463,8 @@ function bindLineLabel(layer, feature, candidateFields, textStyle = {}) {
 
 L.control.layers(
     {
-        'OpenStreetMap': baseLayer
+        'OpenStreetMap': baseLayer,
+        'Satelital (Esri)': satelliteBaseLayer
     },
     {
         'Puntos de inicio y fin': esriLayer0,
@@ -473,8 +480,8 @@ let watchId;
 let isTracking = false;
 let homeControlButton;
 let trackingControlButton;
-const homeIconUrl = 'https://cdn-icons-png.flaticon.com/512/25/25694.png';
-const trackingIconUrl = 'https://www.svgrepo.com/show/502779/my-location.svg';
+const homeIconUrl = 'lib/images/home.png';
+const trackingIconUrl = 'lib/images/my-location.svg';
 const liveLocationIcon = L.divIcon({
     className: 'live-location-icon',
     iconSize: [28, 28],
