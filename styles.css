@@ -46,6 +46,29 @@ body {
     border-bottom: 1px solid rgba(0, 0, 0, 0.08);
 }
 
+.recorridos-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.recorridos-sort {
+    border: 1px solid rgba(0, 0, 0, 0.2);
+    background: #ffffff;
+    border-radius: 6px;
+    padding: 5px 9px;
+    font-size: 12px;
+    color: #334155;
+    min-width: 56px;
+    text-align: center;
+}
+
+.recorridos-sort.is-desc {
+    background: #eef6ff;
+    color: #0b4ea2;
+    border-color: #a8caff;
+}
+
 .recorridos-toggle {
     border: 1px solid rgba(0, 0, 0, 0.2);
     background: #ffffff;

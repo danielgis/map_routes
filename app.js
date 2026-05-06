@@ -12,6 +12,10 @@ let homeBounds = null;
 const recorridosListElement = document.getElementById('recorridosList');
 const recorridosPanelElement = document.getElementById('recorridosPanel');
 const toggleRecorridosPanelButton = document.getElementById('toggleRecorridosPanel');
+const sortRecorridosBtn = document.getElementById('sortRecorridosBtn');
+
+let sortAscending = true;
+let cachedFeatures = [];
 
 const baseLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap contributors',
@@ -66,6 +70,16 @@ if (recorridosPanelElement && toggleRecorridosPanelButton) {
     toggleRecorridosPanelButton.addEventListener('click', () => {
         const collapsed = !document.body.classList.contains('panel-collapsed');
         setRecorridosPanelCollapsed(collapsed);
+    });
+}
+
+if (sortRecorridosBtn) {
+    sortRecorridosBtn.addEventListener('click', () => {
+        sortAscending = !sortAscending;
+        sortRecorridosBtn.textContent = sortAscending ? '\u2191 Asc' : '\u2193 Desc';
+        sortRecorridosBtn.setAttribute('aria-label', sortAscending ? 'Orden ascendente' : 'Orden descendente');
+        sortRecorridosBtn.classList.toggle('is-desc', !sortAscending);
+        renderRecorridosList(cachedFeatures);
     });
 }
 
@@ -168,16 +182,23 @@ function renderRecorridosList(features) {
         return;
     }
 
-    const sortedFeatures = [...features].sort((a, b) => {
-        const aValue = Number(getFieldValue(getFeatureProperties(a), ['id_recorrido', 'ID_RECORRIDO']) || 0);
-        const bValue = Number(getFieldValue(getFeatureProperties(b), ['id_recorrido', 'ID_RECORRIDO']) || 0);
-        return aValue - bValue;
-    });
+    // Asignar ordinal fijo (1, 2, 3...) según orden ascendente por id_recorrido
+    const itemsWithOrdinal = [...features]
+        .map((feature) => ({
+            feature,
+            idRecorrido: Number(getFieldValue(getFeatureProperties(feature), ['id_recorrido', 'ID_RECORRIDO']) || 0)
+        }))
+        .sort((a, b) => a.idRecorrido - b.idRecorrido)
+        .map((item, idx) => ({ ...item, ordinal: idx + 1 }));
 
-    const html = sortedFeatures
-        .map((feature, index) => {
+    // Aplicar dirección de ordenamiento actual
+    const sortedItems = [...itemsWithOrdinal].sort((a, b) =>
+        sortAscending ? a.idRecorrido - b.idRecorrido : b.idRecorrido - a.idRecorrido
+    );
+
+    const html = sortedItems
+        .map(({ feature, idRecorrido, ordinal }) => {
             const nombre = getFieldValue(getFeatureProperties(feature), ['nombre', 'NOMBRE']) || 'Sin nombre';
-            const idRecorrido = getFieldValue(getFeatureProperties(feature), ['id_recorrido', 'ID_RECORRIDO']);
             const bounds = getGeometryBounds(feature);
 
             if (!bounds) {
@@ -187,9 +208,9 @@ function renderRecorridosList(features) {
             const southWest = bounds.getSouthWest();
             const northEast = bounds.getNorthEast();
             const boundsPayload = [southWest.lat, southWest.lng, northEast.lat, northEast.lng].join(',');
-            const idRecorridoPayload = idRecorrido !== null && idRecorrido !== undefined ? String(idRecorrido) : '';
+            const idRecorridoPayload = idRecorrido !== 0 ? String(idRecorrido) : '';
 
-            return `<button type="button" class="recorrido-item" data-bounds="${boundsPayload}" data-id-recorrido="${idRecorridoPayload}">Recorrido ${index + 1}: ${String(nombre)}</button>`;
+            return `<button type="button" class="recorrido-item" data-bounds="${boundsPayload}" data-id-recorrido="${idRecorridoPayload}">Recorrido ${ordinal}: ${String(nombre)}</button>`;
         })
         .join('');
 
@@ -369,8 +390,8 @@ function loadRecorridosList() {
                 return;
             }
 
-            const features = featureCollection?.features || [];
-            renderRecorridosList(features);
+            cachedFeatures = featureCollection?.features || [];
+            renderRecorridosList(cachedFeatures);
         });
 }
 

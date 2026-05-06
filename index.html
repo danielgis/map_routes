@@ -7,7 +7,7 @@
 
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="lib/leaflet.css" />
-    <link rel="stylesheet" href="styles.css?v=20260504-4" />
+    <link rel="stylesheet" href="styles.css?v=20260506-1" />
 </head>
 <body>
 
@@ -15,7 +15,10 @@
     <section id="recorridosPanel" class="recorridos-panel" aria-label="Lista de recorridos">
         <div class="recorridos-panel-header">
             <span>Recorridos</span>
-            <button id="toggleRecorridosPanel" class="recorridos-toggle" type="button" aria-expanded="true">Minimizar</button>
+            <div class="recorridos-header-actions">
+                <button id="sortRecorridosBtn" class="recorridos-sort" type="button" title="Ordenar lista" aria-label="Orden ascendente">&#x2191; Asc</button>
+                <button id="toggleRecorridosPanel" class="recorridos-toggle" type="button" aria-expanded="true">Minimizar</button>
+            </div>
         </div>
         <div id="recorridosList" class="recorridos-list"></div>
     </section>
@@ -26,6 +29,6 @@
     <script src="lib/esri-leaflet.js"></script>
     <!-- TextPath para etiquetas paralelas a lineas -->
     <script src="lib/leaflet.textpath.js"></script>
-    <script src="app.js?v=20260505-5"></script>
+    <script src="app.js?v=20260506-2"></script>
 </body>
 </html>
