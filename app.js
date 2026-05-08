@@ -16,6 +16,70 @@ const sortRecorridosBtn = document.getElementById('sortRecorridosBtn');
 
 let sortAscending = true;
 let cachedFeatures = [];
+let backendRecorridosByGisId = new Map();
+
+function buildJoinKey(value) {
+    if (value === null || value === undefined || value === '') {
+        return null;
+    }
+
+    const raw = String(value).trim();
+    if (!raw) {
+        return null;
+    }
+
+    const numeric = Number(raw);
+    if (!Number.isNaN(numeric)) {
+        return String(Math.trunc(numeric));
+    }
+
+    return raw;
+}
+
+function extractBackendRecorridos(payload) {
+    if (Array.isArray(payload)) {
+        return payload;
+    }
+
+    if (!payload || typeof payload !== 'object') {
+        return [];
+    }
+
+    const candidateArrays = [
+        payload.data,
+        payload.items,
+        payload.results,
+        payload.recorridos,
+        payload.content
+    ];
+
+    const matched = candidateArrays.find((item) => Array.isArray(item));
+    return matched || [];
+}
+
+function getBackendRecorridoGisId(item) {
+    if (!item || typeof item !== 'object') {
+        return null;
+    }
+
+    return item.idRecorridoGis
+        ?? item.id_recorrido_gis
+        ?? item.idRecorridoGIS
+        ?? item.idrecorridogis
+        ?? null;
+}
+
+function getBackendRecorridoNombre(item) {
+    if (!item || typeof item !== 'object') {
+        return null;
+    }
+
+    return item.nombreRecorrido
+        ?? item.nombre_recorrido
+        ?? item.nombre
+        ?? item.NOMBRE
+        ?? null;
+}
 
 const baseLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap contributors',
@@ -31,8 +95,32 @@ const satelliteBaseLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/r
 
 const baseFilter = 'ESTADO = 2 AND ACTIVO = 1';
 const urlParams = new URLSearchParams(window.location.search);
-const ubigeoParam = urlParams.get('ubigeo');
-const idSolicitudParam = urlParams.get('id_solicitud');
+
+function getUrlParam(paramName) {
+    const key = String(paramName || '').trim();
+    if (!key) {
+        return null;
+    }
+
+    const fromSearch = urlParams.get(key);
+    if (fromSearch) {
+        return fromSearch;
+    }
+
+    const hash = window.location.hash || '';
+    const hashQueryIndex = hash.indexOf('?');
+    if (hashQueryIndex === -1) {
+        return null;
+    }
+
+    const hashQueryString = hash.slice(hashQueryIndex + 1);
+    const hashParams = new URLSearchParams(hashQueryString);
+    return hashParams.get(key);
+}
+
+const ubigeoParam = getUrlParam('ubigeo');
+const idSolicitudParam = getUrlParam('id_solicitud') || getUrlParam('idSolicitud');
+const ticketParam = getUrlParam('ticket');
 
 function sanitizeSqlValue(value, isNumeric = false) {
     if (value === null || value === undefined || value === '') {
@@ -54,6 +142,61 @@ const ubigeoClause = ubigeoParam ? `UBIGEO = ${sanitizeSqlValue(ubigeoParam)}` :
 const idSolicitudValue = sanitizeSqlValue(idSolicitudParam, true);
 const idSolicitudClause = idSolicitudValue ? `ID_SOLICITUD = ${idSolicitudValue}` : '';
 const limitesFilter = ubigeoClause || '1=1';
+
+async function exchangeTicketOnLoad() {
+    console.info('Inicio de flujo backend al cargar app', {
+        apiHost: window.APP_CONFIG?.apiHost || null,
+        ticketParam,
+        idSolicitudParam
+    });
+
+    if (!window.BackendApi || typeof window.BackendApi.exchangeTicket !== 'function') {
+        console.warn('BackendApi.exchangeTicket no esta disponible en el arranque.');
+        return;
+    }
+
+    if (!ticketParam) {
+        console.warn('No se encontro parametro ticket en la URL; se omite exchange-ticket.');
+        return;
+    }
+
+    try {
+        const exchangeResult = await window.BackendApi.exchangeTicket(ticketParam);
+        window.ticketExchangeResult = exchangeResult;
+        console.info('exchange-ticket ejecutado correctamente.');
+
+        if (!idSolicitudParam || typeof window.BackendApi.getRecorridosBySolicitud !== 'function') {
+            if (!idSolicitudParam) {
+                console.warn('No se encontro id_solicitud en la URL; se omite listar recorridos.');
+            }
+            return;
+        }
+
+        const recorridosResponse = await window.BackendApi.getRecorridosBySolicitud(idSolicitudParam);
+        console.log('Respuesta de /api/v1/inspection-request/recorridos/listar:', recorridosResponse);
+
+        const backendList = extractBackendRecorridos(recorridosResponse);
+        console.info('Recorridos tabulares recibidos:', backendList.length);
+
+        backendRecorridosByGisId = new Map(
+            backendList
+            .map((item) => [buildJoinKey(getBackendRecorridoGisId(item)), item])
+                .filter(([key]) => Boolean(key))
+        );
+
+        console.info('Recorridos tabulares mapeados por idRecorridoGis:', backendRecorridosByGisId.size);
+
+        if (cachedFeatures.length > 0) {
+            renderRecorridosList(cachedFeatures);
+        }
+    } catch (error) {
+        console.error('Error en flujo exchange-ticket/listar recorridos:', error);
+    }
+}
+
+window.addEventListener('load', () => {
+    exchangeTicketOnLoad();
+});
 
 function setRecorridosPanelCollapsed(collapsed) {
     document.body.classList.toggle('panel-collapsed', collapsed);
@@ -182,23 +325,32 @@ function renderRecorridosList(features) {
         return;
     }
 
-    // Asignar ordinal fijo (1, 2, 3...) según orden ascendente por id_recorrido
-    const itemsWithOrdinal = [...features]
-        .map((feature) => ({
-            feature,
-            idRecorrido: Number(getFieldValue(getFeatureProperties(feature), ['id_recorrido', 'ID_RECORRIDO']) || 0)
-        }))
-        .sort((a, b) => a.idRecorrido - b.idRecorrido)
-        .map((item, idx) => ({ ...item, ordinal: idx + 1 }));
+    const items = [...features]
+        .map((feature) => {
+            const featureProps = getFeatureProperties(feature);
+            const gisIdRaw = getFieldValue(featureProps, ['id_recorrido', 'ID_RECORRIDO', 'idrecorrido', 'IDRECORRIDO']);
+            const backendRecorrido = backendRecorridosByGisId.get(buildJoinKey(gisIdRaw));
+            const nombre = getBackendRecorridoNombre(backendRecorrido) || 'Sin nombre tabular';
 
-    // Aplicar dirección de ordenamiento actual
-    const sortedItems = [...itemsWithOrdinal].sort((a, b) =>
-        sortAscending ? a.idRecorrido - b.idRecorrido : b.idRecorrido - a.idRecorrido
-    );
+            return {
+                feature,
+                idRecorrido: Number(gisIdRaw || 0),
+                nombre
+            };
+        });
+
+    // Aplicar dirección de ordenamiento actual por nombre
+    const sortedItems = [...items].sort((a, b) => {
+        const compare = a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base', numeric: true });
+        if (compare !== 0) {
+            return sortAscending ? compare : -compare;
+        }
+
+        return sortAscending ? a.idRecorrido - b.idRecorrido : b.idRecorrido - a.idRecorrido;
+    });
 
     const html = sortedItems
-        .map(({ feature, idRecorrido, ordinal }) => {
-            const nombre = getFieldValue(getFeatureProperties(feature), ['nombre', 'NOMBRE']) || 'Sin nombre';
+        .map(({ feature, idRecorrido, nombre }) => {
             const bounds = getGeometryBounds(feature);
 
             if (!bounds) {
@@ -210,7 +362,7 @@ function renderRecorridosList(features) {
             const boundsPayload = [southWest.lat, southWest.lng, northEast.lat, northEast.lng].join(',');
             const idRecorridoPayload = idRecorrido !== 0 ? String(idRecorrido) : '';
 
-            return `<button type="button" class="recorrido-item" data-bounds="${boundsPayload}" data-id-recorrido="${idRecorridoPayload}">Recorrido ${ordinal}: ${String(nombre)}</button>`;
+            return `<button type="button" class="recorrido-item" data-bounds="${boundsPayload}" data-id-recorrido="${idRecorridoPayload}">${String(nombre)}</button>`;
         })
         .join('');
 
