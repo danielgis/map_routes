@@ -13,6 +13,7 @@ const recorridosListElement = document.getElementById('recorridosList');
 const recorridosPanelElement = document.getElementById('recorridosPanel');
 const toggleRecorridosPanelButton = document.getElementById('toggleRecorridosPanel');
 const sortRecorridosBtn = document.getElementById('sortRecorridosBtn');
+const focusRecorridosBtn = document.getElementById('focusRecorridosBtn');
 
 let sortAscending = true;
 let cachedFeatures = [];
@@ -80,6 +81,8 @@ function getBackendRecorridoNombre(item) {
         ?? item.NOMBRE
         ?? null;
 }
+let isolateSelectedRecorrido = false;
+let selectedRecorridoId = null;
 
 const baseLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap contributors',
@@ -144,39 +147,32 @@ const idSolicitudClause = idSolicitudValue ? `ID_SOLICITUD = ${idSolicitudValue}
 const limitesFilter = ubigeoClause || '1=1';
 
 async function exchangeTicketOnLoad() {
-    console.info('Inicio de flujo backend al cargar app', {
-        apiHost: window.APP_CONFIG?.apiHost || null,
-        ticketParam,
-        idSolicitudParam
-    });
+    // Inicio de flujo backend al cargar app
 
     if (!window.BackendApi || typeof window.BackendApi.exchangeTicket !== 'function') {
-        console.warn('BackendApi.exchangeTicket no esta disponible en el arranque.');
+        alert('No se encuentra disponible la conexión con el backend.');
         return;
     }
 
     if (!ticketParam) {
-        console.warn('No se encontro parametro ticket en la URL; se omite exchange-ticket.');
+        alert('No se encontró el parámetro ticket en la URL.');
         return;
     }
 
     try {
         const exchangeResult = await window.BackendApi.exchangeTicket(ticketParam);
         window.ticketExchangeResult = exchangeResult;
-        console.info('exchange-ticket ejecutado correctamente.');
 
         if (!idSolicitudParam || typeof window.BackendApi.getRecorridosBySolicitud !== 'function') {
             if (!idSolicitudParam) {
-                console.warn('No se encontro id_solicitud en la URL; se omite listar recorridos.');
+                alert('No se encontró id_solicitud en la URL.');
             }
             return;
         }
 
         const recorridosResponse = await window.BackendApi.getRecorridosBySolicitud(idSolicitudParam);
-        console.log('Respuesta de /api/v1/inspection-request/recorridos/listar:', recorridosResponse);
 
         const backendList = extractBackendRecorridos(recorridosResponse);
-        console.info('Recorridos tabulares recibidos:', backendList.length);
 
         backendRecorridosByGisId = new Map(
             backendList
@@ -184,13 +180,11 @@ async function exchangeTicketOnLoad() {
                 .filter(([key]) => Boolean(key))
         );
 
-        console.info('Recorridos tabulares mapeados por idRecorridoGis:', backendRecorridosByGisId.size);
-
         if (cachedFeatures.length > 0) {
             renderRecorridosList(cachedFeatures);
         }
     } catch (error) {
-        console.error('Error en flujo exchange-ticket/listar recorridos:', error);
+        alert('Ocurrió un error al comunicarse con el backend o al listar recorridos.');
     }
 }
 
@@ -226,9 +220,80 @@ if (sortRecorridosBtn) {
     });
 }
 
+if (focusRecorridosBtn) {
+    focusRecorridosBtn.addEventListener('click', () => {
+        isolateSelectedRecorrido = !isolateSelectedRecorrido;
+        updateFocusRecorridosButton();
+        applyRecorridoVisibilityFilters();
+    });
+}
+
 const layer0Filter = buildWhere([ubigeoClause]);
 const layer1Filter = buildWhere([ubigeoClause]);
 const layer2Filter = buildWhere([ubigeoClause, idSolicitudClause]);
+
+function getLayer2ActiveWhere() {
+    if (!isolateSelectedRecorrido) {
+        return layer2Filter;
+    }
+
+    const selectedIdValue = sanitizeSqlValue(selectedRecorridoId, true);
+    if (!selectedIdValue) {
+        return layer2Filter;
+    }
+
+    return `${layer2Filter} AND ID_RECORRIDO = ${selectedIdValue}`;
+}
+
+function getLayer0ActiveWhere() {
+    if (!isolateSelectedRecorrido) {
+        return layer0Filter;
+    }
+
+    const selectedIdValue = sanitizeSqlValue(selectedRecorridoId, true);
+    if (!selectedIdValue) {
+        return layer0Filter;
+    }
+
+    return `${layer0Filter} AND ID_RECORRIDO = ${selectedIdValue}`;
+}
+
+function getLayer1ActiveWhere() {
+    if (!isolateSelectedRecorrido) {
+        return layer1Filter;
+    }
+
+    const selectedIdValue = sanitizeSqlValue(selectedRecorridoId, true);
+    if (!selectedIdValue) {
+        return layer1Filter;
+    }
+
+    return `${layer1Filter} AND ID_RECORRIDO = ${selectedIdValue}`;
+}
+
+function applyRecorridoVisibilityFilters() {
+    if (esriLayer0 && typeof esriLayer0.setWhere === 'function') {
+        esriLayer0.setWhere(getLayer0ActiveWhere());
+    }
+
+    if (esriLayer1 && typeof esriLayer1.setWhere === 'function') {
+        esriLayer1.setWhere(getLayer1ActiveWhere());
+    }
+
+    if (esriLayer2 && typeof esriLayer2.setWhere === 'function') {
+        esriLayer2.setWhere(getLayer2ActiveWhere());
+    }
+}
+
+function updateFocusRecorridosButton() {
+    if (!focusRecorridosBtn) {
+        return;
+    }
+
+    focusRecorridosBtn.textContent = isolateSelectedRecorrido ? 'Zoom + Solo' : 'Zoom';
+    focusRecorridosBtn.setAttribute('aria-label', isolateSelectedRecorrido ? 'Modo zoom y solo recorrido' : 'Modo solo zoom');
+    focusRecorridosBtn.classList.toggle('is-active', isolateSelectedRecorrido);
+}
 
 const arancelStyle = {
     color: '#ff8c00',
@@ -292,6 +357,8 @@ const esriLayer2 = L.esri.featureLayer({
         weight: 4
     })
 }).addTo(map);
+
+updateFocusRecorridosButton();
 
 function getGeometryBounds(feature) {
     if (!feature || !feature.geometry) {
@@ -391,6 +458,10 @@ function renderRecorridosList(features) {
             if (!rawBounds) {
                 return;
             }
+
+            const rawIdRecorrido = item.getAttribute('data-id-recorrido');
+            selectedRecorridoId = rawIdRecorrido ? Number(rawIdRecorrido) : null;
+            applyRecorridoVisibilityFilters();
 
             const requestToken = ensureLoadingState();
             const bounds = parseBoundsPayload(rawBounds);

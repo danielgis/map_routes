@@ -69,6 +69,24 @@ body {
     border-color: #a8caff;
 }
 
+.recorridos-focus {
+    border: 1px solid rgba(0, 0, 0, 0.2);
+    background: #ffffff;
+    border-radius: 6px;
+    padding: 5px 9px;
+    font-size: 12px;
+    color: #334155;
+    min-width: 84px;
+    text-align: center;
+}
+
+.recorridos-focus.is-active {
+    background: #e6f1ff;
+    color: #0b4ea2;
+    border-color: #a8caff;
+    font-weight: 700;
+}
+
 .recorridos-toggle {
     border: 1px solid rgba(0, 0, 0, 0.2);
     background: #ffffff;
